@@ -24,6 +24,17 @@ test('registration verifies OTP, stores only digest and rejects replay',async()=
  await request(app).get('/me').set(agent(u.token)).expect(200);
  await request(app).get('/me').expect(401);
 });
+test('Swagger UI and OpenAPI specification are publicly available',async()=>{
+ const ui=await request(app).get('/api-docs/').expect(200);
+ assert.match(ui.text,/swagger-ui/);
+ assert.equal(ui.headers['content-security-policy'],undefined);
+ const spec=await request(app).get('/api-docs.json').expect(200);
+ assert.equal(spec.body.openapi,'3.0.3');
+ assert.equal(spec.body.paths['/auth/login'].post.security.length,0);
+ assert.deepEqual(spec.body.security,[{BearerAuth:[]}]);
+ assert.equal(spec.body.paths['/me'].get.security,undefined);
+ assert.ok(spec.body.paths['/children/{id}/checkins'].post);
+});
 test('profile name updates and email changes require OTP sent to the new address',async()=>{
  const u=await register();
  const updated=await request(app).patch('/me').set(agent(u.token)).send({name:'Updated Parent'}).expect(200);

@@ -7,6 +7,8 @@ import jwt from 'jsonwebtoken';
 import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
 import {hash,otp,opaque,publicUser} from './security.js';
+import swaggerUi from 'swagger-ui-express';
+import {openApiSpec} from './openapi.js';
 
 const vietnamDateTime = (date=new Date()) => {
  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
@@ -19,6 +21,8 @@ export function createApp({pool,sendMail,env=process.env}) {
  app.set('trust proxy',1); app.use(helmet());
  app.use(cors({origin:env.ALLOWED_ORIGIN?.split(',') || false}));
  app.use(express.json({limit:'32kb'}));
+ app.get('/api-docs.json',(req,res)=>res.json(openApiSpec));
+ app.use('/api-docs',(req,res,next)=>{res.removeHeader('Content-Security-Policy');next();},swaggerUi.serve,swaggerUi.setup(openApiSpec));
  const run=(fn)=>(req,res,next)=>Promise.resolve(fn(req,res)).catch(next);
  const q=(sql,args=[])=>pool.query(sql,args);
  const fail=(status,message)=>{const e=new Error(message);e.status=status;throw e;};

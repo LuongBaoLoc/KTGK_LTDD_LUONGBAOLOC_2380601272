@@ -18,6 +18,7 @@ render.yaml     Blueprint triển khai backend + PostgreSQL
 ## Bắt đầu
 
 1. Backend hiện dùng `https://luongbaoloc-2380601272-api-th10.onrender.com` (health check: `/health`).
+   Tài liệu Swagger: `/api-docs` (OpenAPI JSON: `/api-docs.json`).
 2. Cài Flutter stable (Dart >=3.8), Android SDK, JDK 17 trở lên. Kết nối điện thoại Android, bật USB debugging.
 3. Chạy các lệnh sau từ thư mục gốc của repository:
 
