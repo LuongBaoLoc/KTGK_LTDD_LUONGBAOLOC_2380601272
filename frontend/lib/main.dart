@@ -2067,15 +2067,20 @@ class _ChildPageState extends State<ChildPage> {
         api.call('GET', '/children/$id/devices'),
         api.call('GET', '/children/$id/agreements'),
         api.call('GET', '/children/$id/checkins'),
-        api.call('GET', '/children/$id/time-budget'),
+        api.call('GET', '/children'),
       ]);
       devices = r[0];
       agreements = r[1];
       checkins = r[2];
-      final budget = Map<String, dynamic>.from(r[3]);
-      bonusMinutesToday = int.tryParse('${budget['bonus_minutes_today']}') ?? 0;
-      nfcStartTime = budget['nfc_start_time'];
-      nfcEndTime = budget['nfc_end_time'];
+      final profiles = (r[3] as List).cast<Map>();
+      final profile = profiles.firstWhere(
+        (item) => item['id'].toString() == id,
+        orElse: () => widget.child,
+      );
+      bonusMinutesToday =
+          int.tryParse('${profile['bonus_minutes_today'] ?? 0}') ?? 0;
+      nfcStartTime = profile['nfc_start_time']?.toString() ?? '08:00';
+      nfcEndTime = profile['nfc_end_time']?.toString() ?? '20:00';
     } catch (e) {
       error = e.toString();
     } finally {
@@ -2226,6 +2231,8 @@ class _ChildPageState extends State<ChildPage> {
                 context,
                 enroll
                     ? 'Đã gắn thẻ'
+                    : !result.containsKey('awarded_minutes')
+                    ? 'Check-in ghi nhận. Hãy triển khai backend mới để bật thưởng NFC.'
                     : result['awarded_minutes'] == 30
                     ? 'Check-in thành công! Đã cộng 30 phút hôm nay.'
                     : 'Check-in thành công. Bạn đã nhận thưởng hôm nay rồi.',
