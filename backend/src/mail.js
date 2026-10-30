@@ -15,4 +15,4 @@ export function createMailer(env=process.env, fetchImpl=fetch) {
   }catch {throw Object.assign(new Error('Chưa gửi được OTP. Vui lòng thử lại sau hoặc liên hệ quản trị.'),{status:503});}
  };
 }
-function message(from,email,code,kind){return {from,to:[email],subject:'ChildGuard • Mã xác thực',text:`Mã ${kind==='verify'?'xác minh tài khoản':'đăng nhập'} ChildGuard của bạn: ${code}. Có hiệu lực 5 phút. Không chia sẻ mã này.`};}
+function message(from,email,code,kind){const purpose=kind==='verify'?'xác minh tài khoản':kind==='email-change'?'thay đổi email':'đăng nhập';return {from,to:[email],subject:'ChildGuard • Mã xác thực',text:`Mã ${purpose} ChildGuard của bạn: ${code}. Có hiệu lực 5 phút. Không chia sẻ mã này.`};}

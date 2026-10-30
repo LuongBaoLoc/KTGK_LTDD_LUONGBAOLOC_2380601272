@@ -24,6 +24,23 @@ const canvas = Color(0xFF0A0D12), mint = Color(0xFF202936);
 const aqua = Color(0xFF77E4C3), muted = Color(0xFF9AA6B5);
 const surface = Color(0xFF171E27), border = Color(0xFF29323F);
 const warning = Color(0xFFFFBF69), critical = Color(0xFFFF6B76);
+const backgroundOptions = <String, Color>{
+  'Đen': canvas,
+  'Xanh rêu': Color(0xFF10221D),
+  'Than chì': Color(0xFF252321),
+};
+final appTextScale = ValueNotifier<double>(1);
+final appBackgroundKey = ValueNotifier<String>('Đen');
+
+Future<void> saveTextScale(double value) async {
+  appTextScale.value = value;
+  await Api.storage.write(key: 'settings_text_scale', value: value.toString());
+}
+
+Future<void> saveBackground(String value) async {
+  appBackgroundKey.value = value;
+  await Api.storage.write(key: 'settings_background', value: value);
+}
 
 String biometricName(BiometricType type) =>
     type == BiometricType.face ? 'khuôn mặt' : 'vân tay';
@@ -31,8 +48,48 @@ String biometricName(BiometricType type) =>
 String biometricTokenKey(BiometricType type) =>
     type == BiometricType.face ? 'face_token' : 'fingerprint_token';
 
-class ChildGuard extends StatelessWidget {
+class ChildGuard extends StatefulWidget {
   const ChildGuard({super.key});
+
+  @override
+  State<ChildGuard> createState() => _ChildGuardState();
+}
+
+class _ChildGuardState extends State<ChildGuard> {
+  @override
+  void initState() {
+    super.initState();
+    appTextScale.addListener(refreshPreferences);
+    appBackgroundKey.addListener(refreshPreferences);
+    loadPreferences();
+  }
+
+  @override
+  void dispose() {
+    appTextScale.removeListener(refreshPreferences);
+    appBackgroundKey.removeListener(refreshPreferences);
+    super.dispose();
+  }
+
+  void refreshPreferences() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> loadPreferences() async {
+    final values = await Future.wait([
+      Api.storage.read(key: 'settings_text_scale'),
+      Api.storage.read(key: 'settings_background'),
+    ]);
+    final scale = double.tryParse(values[0] ?? '');
+    if (scale != null && scale >= .85 && scale <= 1.25) {
+      appTextScale.value = scale;
+    }
+    if (backgroundOptions.containsKey(values[1])) {
+      appBackgroundKey.value = values[1]!;
+    }
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'ChildGuard',
@@ -53,7 +110,8 @@ class ChildGuard extends StatelessWidget {
             outline: border,
             error: critical,
           ),
-      scaffoldBackgroundColor: canvas,
+      scaffoldBackgroundColor:
+          backgroundOptions[appBackgroundKey.value] ?? canvas,
       fontFamily: 'Roboto',
       textTheme: ThemeData.dark().textTheme
           .apply(bodyColor: ink, displayColor: ink)
@@ -127,8 +185,8 @@ class ChildGuard extends StatelessWidget {
         elevation: 3,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: canvas,
+      appBarTheme: AppBarTheme(
+        backgroundColor: backgroundOptions[appBackgroundKey.value] ?? canvas,
         foregroundColor: ink,
         elevation: 0,
         centerTitle: false,
@@ -192,6 +250,12 @@ class ChildGuard extends StatelessWidget {
           side: const BorderSide(color: border),
         ),
       ),
+    ),
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(appTextScale.value)),
+      child: child!,
     ),
     home: const Login(),
   );
@@ -592,11 +656,19 @@ class _LoginState extends State<Login> {
     }
   }
 
-  Future<void> enter(Map<String, dynamic> result) async {
+  Future<void> enter(
+    Map<String, dynamic> result, {
+    bool offerBiometricSetup = false,
+  }) async {
     api.token = result['token'];
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      softRoute(Home(user: Map<String, dynamic>.from(result['user']))),
+      softRoute(
+        Home(
+          user: Map<String, dynamic>.from(result['user']),
+          suggestBiometricSetup: offerBiometricSetup,
+        ),
+      ),
     );
   }
 
@@ -609,6 +681,7 @@ class _LoginState extends State<Login> {
             'code': code.text.trim(),
           }),
         ),
+        offerBiometricSetup: true,
       );
       return;
     }
@@ -925,7 +998,12 @@ class _LoginState extends State<Login> {
 
 class Home extends StatefulWidget {
   final Map<String, dynamic> user;
-  const Home({super.key, required this.user});
+  final bool suggestBiometricSetup;
+  const Home({
+    super.key,
+    required this.user,
+    this.suggestBiometricSetup = false,
+  });
   @override
   State<Home> createState() => _HomeState();
 }
@@ -959,6 +1037,38 @@ class _HomeState extends State<Home> {
     super.initState();
     load();
     loadBiometricSettings();
+    if (widget.suggestBiometricSetup) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => suggestBiometrics());
+    }
+  }
+
+  Future<void> suggestBiometrics() async {
+    final values = await Future.wait([
+      Api.storage.read(key: biometricTokenKey(BiometricType.fingerprint)),
+      Api.storage.read(key: biometricTokenKey(BiometricType.face)),
+      Api.storage.read(key: 'biometric_token'),
+    ]);
+    if (!mounted || values.any((value) => value != null)) return;
+    final configure = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Đăng nhập nhanh hơn'),
+        content: const Text(
+          'Bạn có thể bật vân tay hoặc khuôn mặt để dùng cho lần đăng nhập sau.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Thiết lập'),
+          ),
+        ],
+      ),
+    );
+    if (configure == true && mounted) setState(() => page = 1);
   }
 
   Future<void> loadBiometricSettings() async {
@@ -1179,6 +1289,48 @@ class _HomeState extends State<Home> {
     }
   }
 
+  Future<void> editPersonalProfile() async {
+    final values = await editDialog(context, 'Cập nhật hồ sơ', {
+      'name': ('Họ tên', widget.user['name'].toString()),
+      'email': ('Email', widget.user['email'].toString()),
+    });
+    if (values == null || !mounted) return;
+    try {
+      final updated = Map<String, dynamic>.from(
+        await api.call('PATCH', '/me', {'name': values['name']}),
+      );
+      setState(() => widget.user['name'] = updated['name']);
+      if (values['email'] != widget.user['email']) {
+        final challenge = Map<String, dynamic>.from(
+          await api.call('POST', '/me/email', {'email': values['email']}),
+        );
+        if (challenge['challengeId'] != null) {
+          final otp = await editDialog(context, 'Xác minh email mới', {
+            'code': ('Mã OTP gửi đến email mới', ''),
+          });
+          if (otp == null || !mounted) {
+            notify(context, 'Tên đã cập nhật; email chưa được thay đổi.');
+            return;
+          }
+          final session = Map<String, dynamic>.from(
+            await api.call('POST', '/auth/otp', {
+              'challengeId': challenge['challengeId'],
+              'code': otp['code'],
+            }),
+          );
+          api.token = session['token'];
+          setState(() {
+            widget.user['name'] = session['user']['name'];
+            widget.user['email'] = session['user']['email'];
+          });
+        }
+      }
+      if (mounted) notify(context, 'Đã cập nhật hồ sơ cá nhân.');
+    } catch (e) {
+      if (mounted) notify(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -1310,6 +1462,11 @@ class _HomeState extends State<Home> {
                             ],
                           ),
                         ),
+                        IconButton(
+                          tooltip: 'Cập nhật hồ sơ cá nhân',
+                          onPressed: editPersonalProfile,
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
                       ],
                     ),
                   ),
@@ -1332,6 +1489,61 @@ class _HomeState extends State<Home> {
                           'admin': 'Quản trị viên',
                         }[role] ??
                         role,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              sectionHeading('Tùy chỉnh giao diện'),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Expanded(child: Text('Cỡ chữ')),
+                          Text('${(appTextScale.value * 100).round()}%'),
+                        ],
+                      ),
+                      Slider(
+                        min: .85,
+                        max: 1.25,
+                        divisions: 4,
+                        value: appTextScale.value,
+                        label: '${(appTextScale.value * 100).round()}%',
+                        onChanged: (value) => setState(() {
+                          appTextScale.value = value;
+                        }),
+                        onChangeEnd: saveTextScale,
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: appBackgroundKey.value,
+                        decoration: const InputDecoration(labelText: 'Màu nền'),
+                        items: backgroundOptions.entries
+                            .map(
+                              (entry) => DropdownMenuItem(
+                                value: entry.key,
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 10,
+                                      backgroundColor: entry.value,
+                                      foregroundColor: ink,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(entry.key),
+                                  ],
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null) saveBackground(value);
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1659,6 +1871,8 @@ Future<Map<String, String>?> editDialog(
                   e.value.$1,
                   keyboard: ['age', 'daily_limit', 'reward'].contains(e.key)
                       ? TextInputType.number
+                      : e.key == 'email'
+                      ? TextInputType.emailAddress
                       : null,
                 ),
               )

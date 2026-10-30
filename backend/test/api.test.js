@@ -24,6 +24,16 @@ test('registration verifies OTP, stores only digest and rejects replay',async()=
  await request(app).get('/me').set(agent(u.token)).expect(200);
  await request(app).get('/me').expect(401);
 });
+test('profile name updates and email changes require OTP sent to the new address',async()=>{
+ const u=await register();
+ const updated=await request(app).patch('/me').set(agent(u.token)).send({name:'Updated Parent'}).expect(200);
+ assert.equal(updated.body.name,'Updated Parent');
+ const change=await request(app).post('/me/email').set(agent(u.token)).send({email:'new@example.com'}).expect(200);
+ assert.equal(mails.at(-1).email,'new@example.com');
+ const verified=await request(app).post('/auth/otp').send({challengeId:change.body.challengeId,code:mails.at(-1).code}).expect(200);
+ assert.equal(verified.body.user.email,'new@example.com');
+ await request(app).post('/me/email').set(agent(u.token)).send({email:'new@example.com'}).expect(200);
+});
 test('password login needs email OTP; wrong attempts lock challenge',async()=>{
  await register();await request(app).post('/auth/login').send({username:'parent1',password:'wrong'}).expect(401);
  const r=await request(app).post('/auth/login').send({username:'parent1',password:'StrongPass123!'}).expect(200);

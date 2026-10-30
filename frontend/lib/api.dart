@@ -62,6 +62,6 @@ class Api {
 
   Future<void> logout() async {
     token = null;
-    await storage.deleteAll();
+    await storage.delete(key: 'location_service_auth_token');
   }
 }

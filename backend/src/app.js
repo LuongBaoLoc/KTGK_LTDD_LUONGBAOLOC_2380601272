@@ -45,10 +45,12 @@ export function createApp({pool,sendMail,env=process.env}) {
  app.post('/auth/otp',run(async(req,res)=>{
   const b=z.object({challengeId:z.string().uuid(),code:z.string().regex(/^\d{6}$/)}).parse(req.body);
   const c=await pool.connect(); let u;
-  try {await c.query('BEGIN');const {rows}=await c.query("SELECT * FROM challenges WHERE id=$1 AND kind IN ('login','verify') FOR UPDATE",[b.challengeId]);const ch=rows[0];
+    try {await c.query('BEGIN');const {rows}=await c.query("SELECT * FROM challenges WHERE id=$1 AND kind IN ('login','verify','email-change') FOR UPDATE",[b.challengeId]);const ch=rows[0];
    if(!ch || new Date(ch.expires_at)<new Date() || ch.attempts>=5)fail(401,'OTP hết hạn hoặc bị khóa');
    if(ch.digest!==hash(b.code)){await c.query('UPDATE challenges SET attempts=attempts+1 WHERE id=$1',[ch.id]);await c.query('COMMIT');fail(401,'OTP không đúng');}
-   await c.query('DELETE FROM challenges WHERE id=$1',[ch.id]);u=(await c.query('UPDATE users SET verified=true WHERE id=$1 RETURNING *',[ch.user_id])).rows[0];await c.query('COMMIT');
+    await c.query('DELETE FROM challenges WHERE id=$1',[ch.id]);u=ch.kind==='email-change'
+     ?(await c.query('UPDATE users SET email=$2,verified=true WHERE id=$1 RETURNING *',[ch.user_id,ch.payload.email])).rows[0]
+     :(await c.query('UPDATE users SET verified=true WHERE id=$1 RETURNING *',[ch.user_id])).rows[0];await c.query('COMMIT');
   }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}res.json(session(u));
  }));
  app.get('/auth/google/start',run(async(req,res)=>{
@@ -73,6 +75,18 @@ export function createApp({pool,sendMail,env=process.env}) {
  }));
  app.use(authenticated);
  app.get('/me',(req,res)=>res.json(publicUser(req.user)));
+ app.patch('/me',run(async(req,res)=>{
+  const b=z.object({name:z.string().trim().min(2).max(80)}).strict().parse(req.body);
+  const u=(await q('UPDATE users SET name=$2 WHERE id=$1 RETURNING *',[req.user.id,b.name])).rows[0];res.json(publicUser(u));
+ }));
+ app.post('/me/email',run(async(req,res)=>{
+  const email=z.string().email().max(254).parse(req.body.email).toLowerCase();
+  if(email===req.user.email)return res.json({message:'Email không thay đổi'});
+  const existing=(await q('SELECT id FROM users WHERE email=$1',[email])).rows[0];if(existing)fail(409,'Email đã được sử dụng');
+  const id=randomUUID(),code=otp();await q("DELETE FROM challenges WHERE user_id=$1 AND kind='email-change'",[req.user.id]);
+  await q("INSERT INTO challenges(id,user_id,kind,digest,expires_at,payload) VALUES($1,$2,'email-change',$3,now()+interval '5 minutes',$4)",[id,req.user.id,hash(code),JSON.stringify({email})]);
+  await sendMail(email,code,'email-change');res.json({challengeId:id,message:'Mã OTP đã gửi đến email mới'});
+ }));
  app.get('/children',run(async(req,res)=>res.json((await q('SELECT c.* FROM children c LEFT JOIN child_links l ON l.child_id=c.id WHERE c.parent_id=$1 OR l.user_id=$1 ORDER BY c.created_at DESC',[req.user.id])).rows)));
  const childBody=z.object({name:z.string().trim().min(1).max(80),age:z.number().int().min(1).max(17),daily_limit:z.number().int().min(15).max(1440)});
  app.post('/children',roles('parent'),run(async(req,res)=>{const b=childBody.parse(req.body);res.status(201).json((await q('INSERT INTO children(id,parent_id,name,age,daily_limit) VALUES($1,$2,$3,$4,$5) RETURNING *',[randomUUID(),req.user.id,b.name,b.age,b.daily_limit])).rows[0]);}));
