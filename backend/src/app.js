@@ -8,6 +8,12 @@ import {z} from 'zod';
 import {randomUUID} from 'node:crypto';
 import {hash,otp,opaque,publicUser} from './security.js';
 
+const vietnamDateTime = (date=new Date()) => {
+ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date);
+ const values=Object.fromEntries(parts.map(({type,value})=>[type,value]));
+ return {day:`${values.year}-${values.month}-${values.day}`,time:`${values.hour}:${values.minute}`};
+};
+
 export function createApp({pool,sendMail,env=process.env}) {
  const app=express();
  app.set('trust proxy',1); app.use(helmet());
@@ -87,7 +93,13 @@ export function createApp({pool,sendMail,env=process.env}) {
   await q("INSERT INTO challenges(id,user_id,kind,digest,expires_at,payload) VALUES($1,$2,'email-change',$3,now()+interval '5 minutes',$4)",[id,req.user.id,hash(code),JSON.stringify({email})]);
   await sendMail(email,code,'email-change');res.json({challengeId:id,message:'Mã OTP đã gửi đến email mới'});
  }));
- app.get('/children',run(async(req,res)=>res.json((await q('SELECT c.* FROM children c LEFT JOIN child_links l ON l.child_id=c.id WHERE c.parent_id=$1 OR l.user_id=$1 ORDER BY c.created_at DESC',[req.user.id])).rows)));
+ app.get('/children',run(async(req,res)=>{const {day}=vietnamDateTime();res.json((await q('SELECT c.*,COALESCE(r.minutes,0) AS bonus_minutes_today FROM children c LEFT JOIN child_links l ON l.child_id=c.id LEFT JOIN nfc_rewards r ON r.child_id=c.id AND r.reward_day=$2 WHERE c.parent_id=$1 OR l.user_id=$1 ORDER BY c.created_at DESC',[req.user.id,day])).rows);}));
+ app.get('/children/:id/time-budget',run(async(req,res)=>{
+  const id=idSchema.parse(req.params.id);await owned(id,req.user);const {day}=vietnamDateTime();
+  const c=(await q('SELECT c.daily_limit,c.nfc_start_time,c.nfc_end_time,COALESCE(r.minutes,0) AS bonus_minutes_today FROM children c LEFT JOIN nfc_rewards r ON r.child_id=c.id AND r.reward_day=$2 WHERE c.id=$1',[id,day])).rows[0];
+  const bonusMinutesToday=Number(c.bonus_minutes_today);
+  res.json({...c,bonus_minutes_today:bonusMinutesToday,effective_daily_limit:c.daily_limit+bonusMinutesToday});
+ }));
  const childBody=z.object({name:z.string().trim().min(1).max(80),age:z.number().int().min(1).max(17),daily_limit:z.number().int().min(15).max(1440)});
  app.post('/children',roles('parent'),run(async(req,res)=>{const b=childBody.parse(req.body);res.status(201).json((await q('INSERT INTO children(id,parent_id,name,age,daily_limit) VALUES($1,$2,$3,$4,$5) RETURNING *',[randomUUID(),req.user.id,b.name,b.age,b.daily_limit])).rows[0]);}));
  app.put('/children/:id',roles('parent'),run(async(req,res)=>{const id=idSchema.parse(req.params.id);await parentOwned(id,req.user);const b=childBody.parse(req.body);res.json((await q('UPDATE children SET name=$2,age=$3,daily_limit=$4 WHERE id=$1 RETURNING *',[id,b.name,b.age,b.daily_limit])).rows[0]);}));
@@ -104,13 +116,34 @@ export function createApp({pool,sendMail,env=process.env}) {
  app.patch('/agreements/:id',roles('parent'),run(async(req,res)=>{const a=(await q('SELECT * FROM agreements WHERE id=$1',[idSchema.parse(req.params.id)])).rows[0];if(!a)fail(404,'Không tìm thấy thỏa thuận');await parentOwned(a.child_id,req.user);const status=z.enum(['approved','rejected']).parse(req.body.status);res.json((await q('UPDATE agreements SET status=$2 WHERE id=$1 RETURNING *',[a.id,status])).rows[0]);}));
  app.delete('/agreements/:id',roles('parent'),run(async(req,res)=>{const a=(await q('SELECT * FROM agreements WHERE id=$1',[idSchema.parse(req.params.id)])).rows[0];if(!a)fail(404,'Không tìm thấy thỏa thuận');await parentOwned(a.child_id,req.user);await q('DELETE FROM agreements WHERE id=$1',[a.id]);res.status(204).end();}));
  app.put('/children/:id/nfc',roles('parent'),run(async(req,res)=>{await parentOwned(idSchema.parse(req.params.id),req.user);const tag=z.string().regex(/^[a-f0-9]{64}$/).parse(req.body.tagHash);await q('UPDATE children SET nfc_hash=$2 WHERE id=$1',[req.params.id,tag]);res.json({message:'Đã gắn thẻ NFC'});}));
+ app.put('/children/:id/nfc-schedule',roles('parent'),run(async(req,res)=>{
+  const id=idSchema.parse(req.params.id);await parentOwned(id,req.user);
+  const b=z.object({startTime:z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),endTime:z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/)}).parse(req.body);
+  if(b.startTime>=b.endTime)fail(400,'Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày');
+  res.json((await q('UPDATE children SET nfc_start_time=$2,nfc_end_time=$3 WHERE id=$1 RETURNING nfc_start_time,nfc_end_time',[id,b.startTime,b.endTime])).rows[0]);
+ }));
  app.post('/children/:id/checkins',roles('parent','child'),run(async(req,res)=>{
   const id=idSchema.parse(req.params.id);const scannedTag=z.string().regex(/^[a-f0-9]{64}$/).parse(req.body.tagHash);
-  await owned(id,req.user);const child=(await q('SELECT nfc_hash FROM children WHERE id=$1',[id])).rows[0];
-  if(!child?.nfc_hash||child.nfc_hash!==scannedTag)fail(403,'Thẻ NFC không khớp');
-  res.status(201).json((await q('INSERT INTO checkins(id,child_id) VALUES($1,$2) RETURNING *',[randomUUID(),id])).rows[0]);
+  await owned(id,req.user);const {day,time}=vietnamDateTime();const client=await pool.connect();let result;
+  try{
+   await client.query('BEGIN');
+   const child=(await client.query('SELECT nfc_hash,nfc_start_time,nfc_end_time,daily_limit FROM children WHERE id=$1 FOR UPDATE',[id])).rows[0];
+   if(!child?.nfc_hash||child.nfc_hash!==scannedTag)fail(403,'Thẻ NFC không khớp');
+   if(time<child.nfc_start_time||time>=child.nfc_end_time)fail(403,`Chỉ nhận thưởng từ ${child.nfc_start_time} đến trước ${child.nfc_end_time} (giờ Việt Nam).`);
+   const checkin=(await client.query('INSERT INTO checkins(id,child_id) VALUES($1,$2) RETURNING *',[randomUUID(),id])).rows[0];
+   const existingReward=(await client.query('SELECT minutes FROM nfc_rewards WHERE child_id=$1 AND reward_day=$2',[id,day])).rows[0];
+   let awardedMinutes=0;
+   if(!existingReward){
+    const reward=(await client.query('INSERT INTO nfc_rewards(id,child_id,checkin_id,reward_day,minutes) VALUES($1,$2,$3,$4,30) RETURNING minutes',[randomUUID(),id,checkin.id,day])).rows[0];
+    awardedMinutes=reward.minutes;
+   }
+   const bonusMinutesToday=existingReward?.minutes??30;
+   result={...checkin,awarded_minutes:awardedMinutes,bonus_minutes_today:bonusMinutesToday,effective_daily_limit:child.daily_limit+bonusMinutesToday};
+   await client.query('COMMIT');
+  }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
+  res.status(201).json(result);
  }));
- app.get('/children/:id/checkins',run(async(req,res)=>{await owned(idSchema.parse(req.params.id),req.user);res.json((await q('SELECT * FROM checkins WHERE child_id=$1 ORDER BY created_at DESC LIMIT 50',[req.params.id])).rows);}));
+ app.get('/children/:id/checkins',run(async(req,res)=>{await owned(idSchema.parse(req.params.id),req.user);res.json((await q('SELECT c.*,COALESCE(r.minutes,0) AS reward_minutes FROM checkins c LEFT JOIN nfc_rewards r ON r.checkin_id=c.id WHERE c.child_id=$1 ORDER BY c.created_at DESC LIMIT 50',[req.params.id])).rows);}));
  app.get('/children/:id/location',run(async(req,res)=>{
   await owned(idSchema.parse(req.params.id),req.user);
   const location=(await q('SELECT * FROM shared_locations WHERE child_id=$1',[req.params.id])).rows[0];

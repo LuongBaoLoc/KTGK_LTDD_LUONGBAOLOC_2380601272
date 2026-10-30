@@ -19,18 +19,41 @@ void main() {
 }
 
 final api = Api();
-const ink = Color(0xFFF4F7FB), green = Color(0xFFC6FF4D);
-const canvas = Color(0xFF0A0D12), mint = Color(0xFF202936);
-const aqua = Color(0xFF77E4C3), muted = Color(0xFF9AA6B5);
-const surface = Color(0xFF171E27), border = Color(0xFF29323F);
-const warning = Color(0xFFFFBF69), critical = Color(0xFFFF6B76);
-const backgroundOptions = <String, Color>{
-  'Đen': canvas,
-  'Xanh rêu': Color(0xFF10221D),
-  'Than chì': Color(0xFF252321),
-};
 final appTextScale = ValueNotifier<double>(1);
 final appBackgroundKey = ValueNotifier<String>('Đen');
+final appDarkMode = ValueNotifier<bool>(true);
+
+bool get isDarkMode => appDarkMode.value;
+Color get ink => isDarkMode ? const Color(0xFFF4F7FB) : const Color(0xFF18212B);
+Color get green =>
+    isDarkMode ? const Color(0xFFC6FF4D) : const Color(0xFF467D00);
+Color get canvas =>
+    isDarkMode ? const Color(0xFF0A0D12) : const Color(0xFFF6F8F5);
+Color get mint =>
+    isDarkMode ? const Color(0xFF202936) : const Color(0xFFE6EDE7);
+Color get aqua =>
+    isDarkMode ? const Color(0xFF77E4C3) : const Color(0xFF087F67);
+Color get muted =>
+    isDarkMode ? const Color(0xFF9AA6B5) : const Color(0xFF5E6B64);
+Color get surface => isDarkMode ? const Color(0xFF171E27) : Colors.white;
+Color get border =>
+    isDarkMode ? const Color(0xFF29323F) : const Color(0xFFD5DED7);
+Color get warning =>
+    isDarkMode ? const Color(0xFFFFBF69) : const Color(0xFF9B5600);
+Color get critical =>
+    isDarkMode ? const Color(0xFFFF6B76) : const Color(0xFFB42332);
+
+Map<String, Color> get backgroundOptions => isDarkMode
+    ? const {
+        'Đen': Color(0xFF0A0D12),
+        'Xanh rêu': Color(0xFF10221D),
+        'Than chì': Color(0xFF252321),
+      }
+    : const {
+        'Đen': Color(0xFFF6F8F5),
+        'Xanh rêu': Color(0xFFEAF2E8),
+        'Than chì': Color(0xFFF1EFEC),
+      };
 
 Future<void> saveTextScale(double value) async {
   appTextScale.value = value;
@@ -42,11 +65,22 @@ Future<void> saveBackground(String value) async {
   await Api.storage.write(key: 'settings_background', value: value);
 }
 
-String biometricName(BiometricType type) =>
-    type == BiometricType.face ? 'khuôn mặt' : 'vân tay';
+Future<void> saveDarkMode(bool value) async {
+  appDarkMode.value = value;
+  await Api.storage.write(key: 'settings_dark_mode', value: value.toString());
+}
 
-String biometricTokenKey(BiometricType type) =>
-    type == BiometricType.face ? 'face_token' : 'fingerprint_token';
+String biometricName(BiometricType type) => switch (type) {
+  BiometricType.face => 'khuôn mặt',
+  BiometricType.fingerprint => 'vân tay',
+  _ => 'sinh trắc học',
+};
+
+String biometricTokenKey(BiometricType type) => switch (type) {
+  BiometricType.face => 'face_token',
+  BiometricType.fingerprint => 'fingerprint_token',
+  _ => 'biometric_token',
+};
 
 class ChildGuard extends StatefulWidget {
   const ChildGuard({super.key});
@@ -61,6 +95,7 @@ class _ChildGuardState extends State<ChildGuard> {
     super.initState();
     appTextScale.addListener(refreshPreferences);
     appBackgroundKey.addListener(refreshPreferences);
+    appDarkMode.addListener(refreshPreferences);
     loadPreferences();
   }
 
@@ -68,6 +103,7 @@ class _ChildGuardState extends State<ChildGuard> {
   void dispose() {
     appTextScale.removeListener(refreshPreferences);
     appBackgroundKey.removeListener(refreshPreferences);
+    appDarkMode.removeListener(refreshPreferences);
     super.dispose();
   }
 
@@ -79,6 +115,7 @@ class _ChildGuardState extends State<ChildGuard> {
     final values = await Future.wait([
       Api.storage.read(key: 'settings_text_scale'),
       Api.storage.read(key: 'settings_background'),
+      Api.storage.read(key: 'settings_dark_mode'),
     ]);
     final scale = double.tryParse(values[0] ?? '');
     if (scale != null && scale >= .85 && scale <= 1.25) {
@@ -86,6 +123,9 @@ class _ChildGuardState extends State<ChildGuard> {
     }
     if (backgroundOptions.containsKey(values[1])) {
       appBackgroundKey.value = values[1]!;
+    }
+    if (values[2] == 'true' || values[2] == 'false') {
+      appDarkMode.value = values[2] == 'true';
     }
     if (mounted) setState(() {});
   }
@@ -99,7 +139,7 @@ class _ChildGuardState extends State<ChildGuard> {
       colorScheme:
           ColorScheme.fromSeed(
             seedColor: green,
-            brightness: Brightness.dark,
+            brightness: isDarkMode ? Brightness.dark : Brightness.light,
             surface: surface,
           ).copyWith(
             primary: green,
@@ -113,26 +153,26 @@ class _ChildGuardState extends State<ChildGuard> {
       scaffoldBackgroundColor:
           backgroundOptions[appBackgroundKey.value] ?? canvas,
       fontFamily: 'Roboto',
-      textTheme: ThemeData.dark().textTheme
+      textTheme: (isDarkMode ? ThemeData.dark() : ThemeData.light()).textTheme
           .apply(bodyColor: ink, displayColor: ink)
           .copyWith(
-            headlineSmall: const TextStyle(
+            headlineSmall: TextStyle(
               color: ink,
               fontSize: 24,
               fontWeight: FontWeight.w800,
               height: 1.2,
             ),
-            titleLarge: const TextStyle(
+            titleLarge: TextStyle(
               color: ink,
               fontSize: 20,
               fontWeight: FontWeight.w700,
             ),
-            titleMedium: const TextStyle(
+            titleMedium: TextStyle(
               color: ink,
               fontSize: 16,
               fontWeight: FontWeight.w700,
             ),
-            bodyMedium: const TextStyle(fontSize: 14, height: 1.45),
+            bodyMedium: TextStyle(fontSize: 14, height: 1.45),
           ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
@@ -143,36 +183,33 @@ class _ChildGuardState extends State<ChildGuard> {
           ),
           animationDuration: const Duration(milliseconds: 180),
           overlayColor: Colors.white.withValues(alpha: .08),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w700,
-            letterSpacing: .1,
-          ),
+          textStyle: TextStyle(fontWeight: FontWeight.w700, letterSpacing: .1),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(48, 50),
-          side: const BorderSide(color: border),
+          side: BorderSide(color: border),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
           animationDuration: const Duration(milliseconds: 180),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          textStyle: TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: green,
           animationDuration: const Duration(milliseconds: 160),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          textStyle: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
-      listTileTheme: const ListTileThemeData(
+      listTileTheme: ListTileThemeData(
         contentPadding: EdgeInsets.symmetric(horizontal: 18, vertical: 6),
         iconColor: green,
         minLeadingWidth: 42,
       ),
-      navigationBarTheme: const NavigationBarThemeData(
+      navigationBarTheme: NavigationBarThemeData(
         backgroundColor: surface,
         indicatorColor: mint,
         elevation: 0,
@@ -204,19 +241,19 @@ class _ChildGuardState extends State<ChildGuard> {
           horizontal: 16,
           vertical: 17,
         ),
-        labelStyle: const TextStyle(color: muted),
-        hintStyle: const TextStyle(color: muted),
+        labelStyle: TextStyle(color: muted),
+        hintStyle: TextStyle(color: muted),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: border),
+          borderSide: BorderSide(color: border),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: border),
+          borderSide: BorderSide(color: border),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: green, width: 1.5),
+          borderSide: BorderSide(color: green, width: 1.5),
         ),
       ),
       cardTheme: CardThemeData(
@@ -225,29 +262,25 @@ class _ChildGuardState extends State<ChildGuard> {
         color: surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: border),
+          side: BorderSide(color: border),
         ),
       ),
-      dividerTheme: const DividerThemeData(
-        color: border,
-        space: 1,
-        thickness: 1,
-      ),
+      dividerTheme: DividerThemeData(color: border, space: 1, thickness: 1),
       dialogTheme: DialogThemeData(
         backgroundColor: surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
+      progressIndicatorTheme: ProgressIndicatorThemeData(
         color: green,
         linearTrackColor: mint,
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         backgroundColor: surface,
-        contentTextStyle: const TextStyle(color: ink),
+        contentTextStyle: TextStyle(color: ink),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: border),
+          side: BorderSide(color: border),
         ),
       ),
     ),
@@ -280,34 +313,31 @@ Widget field(
   ),
 );
 
-Widget sectionHeading(
-  String title, {
-  String? subtitle,
-  Widget? action,
-}) => Padding(
-  padding: const EdgeInsets.only(bottom: 12),
-  child: Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+Widget sectionHeading(String title, {String? subtitle, Widget? action}) =>
+    Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
+                ),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: TextStyle(color: muted, height: 1.4)),
+                ],
+              ],
             ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 4),
-              Text(subtitle, style: const TextStyle(color: muted, height: 1.4)),
-            ],
-          ],
-        ),
+          ),
+          if (action != null) action,
+        ],
       ),
-      if (action != null) action,
-    ],
-  ),
-);
+    );
 
 class AnimatedEntrance extends StatelessWidget {
   const AnimatedEntrance({
@@ -386,6 +416,11 @@ class ScreenTimeOverview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dailyLimit = int.tryParse('${child['daily_limit']}');
+    final bonusMinutes =
+        int.tryParse('${child['bonus_minutes_today'] ?? 0}') ?? 0;
+    final effectiveDailyLimit = dailyLimit == null
+        ? null
+        : dailyLimit + bonusMinutes;
     final profileId = child['id'].toString();
 
     return Container(
@@ -407,14 +442,14 @@ class ScreenTimeOverview extends StatelessWidget {
                   color: mint,
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.hourglass_bottom_rounded,
                   color: green,
                   size: 19,
                 ),
               ),
               const SizedBox(width: 11),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'KẾ HOẠCH THỜI GIAN SỐ',
                   style: TextStyle(
@@ -438,7 +473,7 @@ class ScreenTimeOverview extends StatelessWidget {
                           )
                           ? selectedChildId
                           : profileId,
-                      icon: const Icon(Icons.expand_more_rounded, color: green),
+                      icon: Icon(Icons.expand_more_rounded, color: green),
                       dropdownColor: surface,
                       borderRadius: BorderRadius.circular(12),
                       items: profiles
@@ -464,7 +499,7 @@ class ScreenTimeOverview extends StatelessWidget {
             const SizedBox(height: 15),
             Text(
               child['name'].toString(),
-              style: const TextStyle(
+              style: TextStyle(
                 color: ink,
                 fontSize: 19,
                 fontWeight: FontWeight.w800,
@@ -473,7 +508,7 @@ class ScreenTimeOverview extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               '${child['age']} tuổi',
-              style: const TextStyle(color: muted, fontSize: 13),
+              style: TextStyle(color: muted, fontSize: 13),
             ),
           ],
           const SizedBox(height: 20),
@@ -484,7 +519,7 @@ class ScreenTimeOverview extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'HẠN MỨC HÔM NAY',
                       style: TextStyle(
                         color: muted,
@@ -495,8 +530,10 @@ class ScreenTimeOverview extends StatelessWidget {
                     ),
                     const SizedBox(height: 5),
                     Text(
-                      dailyLimit == null ? '—' : '$dailyLimit',
-                      style: const TextStyle(
+                      effectiveDailyLimit == null
+                          ? '—'
+                          : '$effectiveDailyLimit',
+                      style: TextStyle(
                         color: green,
                         fontSize: 32,
                         fontWeight: FontWeight.w800,
@@ -505,14 +542,19 @@ class ScreenTimeOverview extends StatelessWidget {
                     ),
                     Text(
                       'phút mỗi ngày',
-                      style: const TextStyle(color: muted, fontSize: 11),
+                      style: TextStyle(color: muted, fontSize: 11),
                     ),
+                    if (bonusMinutes > 0)
+                      Text(
+                        'Gồm +$bonusMinutes phút thưởng NFC',
+                        style: TextStyle(color: aqua, fontSize: 11),
+                      ),
                   ],
                 ),
               ),
               Container(width: 1, height: 58, color: border),
               const SizedBox(width: 16),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -547,7 +589,7 @@ class ScreenTimeOverview extends StatelessWidget {
           const SizedBox(height: 16),
           const Divider(),
           const SizedBox(height: 12),
-          const Row(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(Icons.info_outline_rounded, color: aqua, size: 18),
@@ -563,8 +605,8 @@ class ScreenTimeOverview extends StatelessWidget {
           const SizedBox(height: 14),
           OutlinedButton.icon(
             onPressed: onOpenProfile,
-            icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-            label: const Text('Mở hồ sơ'),
+            icon: Icon(Icons.arrow_forward_rounded, size: 18),
+            label: Text('Mở hồ sơ'),
           ),
         ],
       ),
@@ -599,9 +641,9 @@ class _QuickActionRow extends StatelessWidget {
         ),
         child: Icon(icon, color: green, size: 20),
       ),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-      subtitle: Text(subtitle, style: const TextStyle(color: muted)),
-      trailing: const Icon(Icons.chevron_right_rounded, color: muted),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.w700)),
+      subtitle: Text(subtitle, style: TextStyle(color: muted)),
+      trailing: Icon(Icons.chevron_right_rounded, color: muted),
       onTap: onTap,
     ),
   );
@@ -700,9 +742,13 @@ class _LoginState extends State<Login> {
     if (!mounted) return;
     if (!await auth.authenticate(context, type)) return;
     final key = biometricTokenKey(type);
-    final token =
-        await Api.storage.read(key: key) ??
-        await Api.storage.read(key: 'biometric_token');
+    var token = await Api.storage.read(key: key);
+    if (token == null && type == BiometricType.weak) {
+      token =
+          await Api.storage.read(key: 'face_token') ??
+          await Api.storage.read(key: 'fingerprint_token');
+    }
+    token ??= await Api.storage.read(key: 'biometric_token');
     if (token == null) {
       throw Exception(
         'Hãy đăng nhập bằng OTP rồi bật ${biometricName(type)} trong tài khoản trước.',
@@ -780,14 +826,14 @@ class _LoginState extends State<Login> {
                             color: mint,
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: const Icon(
+                          child: Icon(
                             Icons.shield_rounded,
                             color: green,
                             size: 30,
                           ),
                         ),
                         const SizedBox(width: 14),
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -836,10 +882,7 @@ class _LoginState extends State<Login> {
                                   : register
                                   ? 'Tạo tài khoản để bắt đầu đồng hành cùng gia đình.'
                                   : 'Đăng nhập để tiếp tục đồng hành cùng gia đình.',
-                              style: const TextStyle(
-                                color: muted,
-                                height: 1.45,
-                              ),
+                              style: TextStyle(color: muted, height: 1.45),
                             ),
                             const SizedBox(height: 22),
                             if (!api.configured)
@@ -850,15 +893,13 @@ class _LoginState extends State<Login> {
                                   color: const Color(0xFF332819),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Text(
+                                child: Text(
                                   'Chưa cấu hình máy chủ. Xem hướng dẫn chạy backend để kết nối.',
                                   style: TextStyle(color: warning),
                                 ),
                               ),
                             if (challenge != null) ...[
-                              const Text(
-                                'Mã có hiệu lực 5 phút, tối đa 5 lần thử.',
-                              ),
+                              Text('Mã có hiệu lực 5 phút, tối đa 5 lần thử.'),
                               const SizedBox(height: 12),
                               field(
                                 code,
@@ -901,7 +942,7 @@ class _LoginState extends State<Login> {
                               ),
                             ),
                             if (challenge == null) ...[
-                              const Padding(
+                              Padding(
                                 padding: EdgeInsets.symmetric(vertical: 14),
                                 child: Row(
                                   children: [
@@ -927,39 +968,48 @@ class _LoginState extends State<Login> {
                               AnimatedPress(
                                 child: OutlinedButton.icon(
                                   onPressed: busy ? null : google,
-                                  icon: const Icon(
-                                    Icons.account_circle_outlined,
-                                  ),
-                                  label: const Text('Tiếp tục với Google'),
+                                  icon: Icon(Icons.account_circle_outlined),
+                                  label: Text('Tiếp tục với Google'),
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              AnimatedPress(
-                                child: OutlinedButton.icon(
-                                  onPressed: busy
-                                      ? null
-                                      : () => biometric(
-                                          BiometricType.fingerprint,
-                                        ),
-                                  icon: const Icon(Icons.fingerprint),
-                                  label: const Text('Mở bằng vân tay'),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              AnimatedPress(
-                                child: OutlinedButton.icon(
-                                  onPressed: busy
-                                      ? null
-                                      : () => biometric(BiometricType.face),
-                                  icon: const Icon(
-                                    Icons.face_retouching_natural,
+                              if (BiometricAuth().canChooseBiometricType) ...[
+                                AnimatedPress(
+                                  child: OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => biometric(
+                                            BiometricType.fingerprint,
+                                          ),
+                                    icon: Icon(Icons.fingerprint),
+                                    label: Text('Mở bằng vân tay'),
                                   ),
-                                  label: const Text('Mở bằng khuôn mặt'),
                                 ),
-                              ),
+                                const SizedBox(height: 8),
+                                AnimatedPress(
+                                  child: OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => biometric(BiometricType.face),
+                                    icon: Icon(Icons.face_retouching_natural),
+                                    label: Text('Mở bằng khuôn mặt'),
+                                  ),
+                                ),
+                              ] else
+                                AnimatedPress(
+                                  child: OutlinedButton.icon(
+                                    onPressed: busy
+                                        ? null
+                                        : () => biometric(BiometricType.weak),
+                                    icon: Icon(Icons.fingerprint),
+                                    label: Text('Mở bằng sinh trắc học'),
+                                  ),
+                                ),
                               const SizedBox(height: 8),
-                              const Text(
-                                'Android sẽ chọn phương thức sinh trắc học đã đăng ký.',
+                              Text(
+                                BiometricAuth().canChooseBiometricType
+                                    ? 'Chọn phương thức sinh trắc học đã đăng ký.'
+                                    : 'Android sẽ chọn phương thức sinh trắc học đã đăng ký.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(fontSize: 12, color: muted),
                               ),
@@ -1052,18 +1102,18 @@ class _HomeState extends State<Home> {
     final configure = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Đăng nhập nhanh hơn'),
-        content: const Text(
+        title: Text('Đăng nhập nhanh hơn'),
+        content: Text(
           'Bạn có thể bật vân tay hoặc khuôn mặt để dùng cho lần đăng nhập sau.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Để sau'),
+            child: Text('Để sau'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Thiết lập'),
+            child: Text('Thiết lập'),
           ),
         ],
       ),
@@ -1139,7 +1189,7 @@ class _HomeState extends State<Home> {
             ),
             const SizedBox(height: 16),
             if (user['role'] == 'admin')
-              const Text(
+              Text(
                 'Tài khoản quản trị được bảo vệ, không thể đổi quyền tại đây.',
               )
             else
@@ -1148,8 +1198,8 @@ class _HomeState extends State<Home> {
                   contentPadding: EdgeInsets.zero,
                   title: Text(labels[role]!),
                   trailing: user['role'] == role
-                      ? const Icon(Icons.check)
-                      : const Icon(Icons.chevron_right),
+                      ? Icon(Icons.check)
+                      : Icon(Icons.chevron_right),
                   onTap: user['role'] == role
                       ? null
                       : () => Navigator.pop(ctx, role),
@@ -1158,10 +1208,7 @@ class _HomeState extends State<Home> {
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Đóng')),
         ],
       ),
     );
@@ -1169,16 +1216,16 @@ class _HomeState extends State<Home> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Xác nhận đổi quyền'),
+        title: Text('Xác nhận đổi quyền'),
         content: Text('Đổi ${user['name']} thành ${labels[selected]}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
+            child: Text('Hủy'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Xác nhận'),
+            child: Text('Xác nhận'),
           ),
         ],
       ),
@@ -1269,14 +1316,26 @@ class _HomeState extends State<Home> {
           throw Exception('Phiên đăng nhập không hợp lệ. Hãy đăng nhập lại.');
         }
         await Api.storage.write(key: biometricTokenKey(type), value: token);
-        await Api.storage.delete(key: 'biometric_token');
+        if (type == BiometricType.weak) {
+          await Api.storage.delete(key: 'face_token');
+          await Api.storage.delete(key: 'fingerprint_token');
+        } else {
+          await Api.storage.delete(key: 'biometric_token');
+        }
       } else {
         await Api.storage.delete(key: biometricTokenKey(type));
+        if (type == BiometricType.weak) {
+          await Api.storage.delete(key: 'face_token');
+          await Api.storage.delete(key: 'fingerprint_token');
+        }
         await Api.storage.delete(key: 'biometric_token');
       }
       if (mounted) {
         setState(() {
-          if (type == BiometricType.face) {
+          if (type == BiometricType.weak) {
+            faceEnabled = enabled;
+            fingerprintEnabled = enabled;
+          } else if (type == BiometricType.face) {
             faceEnabled = enabled;
           } else {
             fingerprintEnabled = enabled;
@@ -1343,10 +1402,10 @@ class _HomeState extends State<Home> {
               color: mint,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.shield_rounded, color: green, size: 19),
+            child: Icon(Icons.shield_rounded, color: green, size: 19),
           ),
           const SizedBox(width: 11),
-          const Column(
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1369,7 +1428,7 @@ class _HomeState extends State<Home> {
           IconButton(
             tooltip: 'Làm mới dữ liệu',
             onPressed: load,
-            icon: const Icon(Icons.refresh_rounded),
+            icon: Icon(Icons.refresh_rounded),
           ),
         IconButton(
           tooltip: 'Mở tài khoản',
@@ -1379,7 +1438,7 @@ class _HomeState extends State<Home> {
             backgroundColor: mint,
             child: Text(
               userInitial,
-              style: const TextStyle(
+              style: TextStyle(
                 color: green,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
@@ -1410,12 +1469,12 @@ class _HomeState extends State<Home> {
         ? ListView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
             children: [
-              const Text(
+              Text(
                 'Tài khoản',
                 style: TextStyle(fontSize: 27, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 5),
-              const Text(
+              Text(
                 'Hồ sơ và tùy chọn bảo mật của bạn.',
                 style: TextStyle(color: muted),
               ),
@@ -1435,7 +1494,7 @@ class _HomeState extends State<Home> {
                                 .toString()
                                 .substring(0, 1)
                                 .toUpperCase(),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: ink,
                               fontSize: 24,
                               fontWeight: FontWeight.w800,
@@ -1449,7 +1508,7 @@ class _HomeState extends State<Home> {
                             children: [
                               Text(
                                 widget.user['name'],
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -1457,7 +1516,7 @@ class _HomeState extends State<Home> {
                               const SizedBox(height: 4),
                               Text(
                                 widget.user['email'],
-                                style: const TextStyle(color: muted),
+                                style: TextStyle(color: muted),
                               ),
                             ],
                           ),
@@ -1465,7 +1524,7 @@ class _HomeState extends State<Home> {
                         IconButton(
                           tooltip: 'Cập nhật hồ sơ cá nhân',
                           onPressed: editPersonalProfile,
-                          icon: const Icon(Icons.edit_outlined),
+                          icon: Icon(Icons.edit_outlined),
                         ),
                       ],
                     ),
@@ -1476,11 +1535,11 @@ class _HomeState extends State<Home> {
               sectionHeading('Thông tin tài khoản'),
               Card(
                 child: ListTile(
-                  leading: const CircleAvatar(
+                  leading: CircleAvatar(
                     backgroundColor: mint,
                     child: Icon(Icons.badge_outlined),
                   ),
-                  title: const Text('Vai trò'),
+                  title: Text('Vai trò'),
                   subtitle: Text(
                     {
                           'parent': 'Phụ huynh',
@@ -1500,9 +1559,26 @@ class _HomeState extends State<Home> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('Chế độ tối'),
+                        subtitle: Text(
+                          isDarkMode
+                              ? 'Đang bật giao diện tối'
+                              : 'Đang bật giao diện sáng',
+                          style: TextStyle(color: muted),
+                        ),
+                        secondary: Icon(
+                          isDarkMode ? Icons.dark_mode : Icons.light_mode,
+                          color: green,
+                        ),
+                        value: isDarkMode,
+                        onChanged: saveDarkMode,
+                      ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          const Expanded(child: Text('Cỡ chữ')),
+                          Expanded(child: Text('Cỡ chữ')),
                           Text('${(appTextScale.value * 100).round()}%'),
                         ],
                       ),
@@ -1520,7 +1596,7 @@ class _HomeState extends State<Home> {
                       const SizedBox(height: 8),
                       DropdownButtonFormField<String>(
                         initialValue: appBackgroundKey.value,
-                        decoration: const InputDecoration(labelText: 'Màu nền'),
+                        decoration: InputDecoration(labelText: 'Màu nền'),
                         items: backgroundOptions.entries
                             .map(
                               (entry) => DropdownMenuItem(
@@ -1552,46 +1628,63 @@ class _HomeState extends State<Home> {
                 'Bảo mật',
                 subtitle: 'Chọn cách mở ứng dụng bằng sinh trắc học.',
               ),
-              Card(
-                child: SwitchListTile(
-                  secondary: const CircleAvatar(
-                    backgroundColor: mint,
-                    child: Icon(Icons.fingerprint),
+              if (BiometricAuth().canChooseBiometricType) ...[
+                Card(
+                  child: SwitchListTile(
+                    secondary: CircleAvatar(
+                      backgroundColor: mint,
+                      child: Icon(Icons.fingerprint),
+                    ),
+                    title: Text('Vân tay'),
+                    subtitle: Text(
+                      'Dùng sinh trắc học đã đăng ký trên điện thoại.',
+                    ),
+                    value: fingerprintEnabled,
+                    onChanged: (enabled) =>
+                        setBiometricEnabled(BiometricType.fingerprint, enabled),
                   ),
-                  title: const Text('Vân tay'),
-                  subtitle: const Text(
-                    'Dùng sinh trắc học đã đăng ký trên điện thoại.',
-                  ),
-                  value: fingerprintEnabled,
-                  onChanged: (enabled) =>
-                      setBiometricEnabled(BiometricType.fingerprint, enabled),
                 ),
-              ),
-              Card(
-                child: SwitchListTile(
-                  secondary: const CircleAvatar(
-                    backgroundColor: mint,
-                    child: Icon(Icons.face_retouching_natural),
+                Card(
+                  child: SwitchListTile(
+                    secondary: CircleAvatar(
+                      backgroundColor: mint,
+                      child: Icon(Icons.face_retouching_natural),
+                    ),
+                    title: Text('Khuôn mặt'),
+                    subtitle: Text(
+                      'Dùng sinh trắc học đã đăng ký trên điện thoại.',
+                    ),
+                    value: faceEnabled,
+                    onChanged: (enabled) =>
+                        setBiometricEnabled(BiometricType.face, enabled),
                   ),
-                  title: const Text('Khuôn mặt'),
-                  subtitle: const Text(
-                    'Dùng sinh trắc học đã đăng ký trên điện thoại.',
-                  ),
-                  value: faceEnabled,
-                  onChanged: (enabled) =>
-                      setBiometricEnabled(BiometricType.face, enabled),
                 ),
-              ),
+              ] else
+                Card(
+                  child: SwitchListTile(
+                    secondary: CircleAvatar(
+                      backgroundColor: mint,
+                      child: Icon(Icons.fingerprint),
+                    ),
+                    title: Text('Sinh trắc học'),
+                    subtitle: Text(
+                      'Android sẽ chọn phương thức đã đăng ký trên thiết bị.',
+                    ),
+                    value: fingerprintEnabled || faceEnabled,
+                    onChanged: (enabled) =>
+                        setBiometricEnabled(BiometricType.weak, enabled),
+                  ),
+                ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: logout,
-                icon: const Icon(Icons.logout),
-                label: const Text('Đăng xuất khỏi tài khoản'),
+                icon: Icon(Icons.logout),
+                label: Text('Đăng xuất khỏi tài khoản'),
               ),
             ],
           )
         : loading
-        ? const Center(child: CircularProgressIndicator())
+        ? Center(child: CircularProgressIndicator())
         : error != null
         ? Center(
             child: Padding(
@@ -1600,7 +1693,7 @@ class _HomeState extends State<Home> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(error!),
-                  FilledButton(onPressed: load, child: const Text('Thử lại')),
+                  FilledButton(onPressed: load, child: Text('Thử lại')),
                 ],
               ),
             ),
@@ -1610,7 +1703,7 @@ class _HomeState extends State<Home> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
               children: [
-                const Text(
+                Text(
                   'TỔNG QUAN • HÔM NAY',
                   style: TextStyle(
                     color: green,
@@ -1628,7 +1721,7 @@ class _HomeState extends State<Home> {
                       : isParent
                       ? 'Gia đình của bạn'
                       : 'Không gian của con',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 27,
                     height: 1.15,
                     fontWeight: FontWeight.w800,
@@ -1642,11 +1735,7 @@ class _HomeState extends State<Home> {
                       : role == 'staff'
                       ? 'Tổng quan vận hành'
                       : 'Chào ${widget.user['name']}, cùng xây dựng thói quen số lành mạnh.',
-                  style: const TextStyle(
-                    color: muted,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
+                  style: TextStyle(color: muted, fontSize: 13, height: 1.4),
                 ),
                 const SizedBox(height: 20),
                 if (selectedChild != null)
@@ -1693,7 +1782,7 @@ class _HomeState extends State<Home> {
                                 children: [
                                   Text(
                                     e.key.replaceAll('_', ' ').toUpperCase(),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: muted,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
@@ -1703,7 +1792,7 @@ class _HomeState extends State<Home> {
                                   const SizedBox(height: 8),
                                   Text(
                                     '${e.value}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: ink,
                                       fontSize: 25,
                                       fontWeight: FontWeight.w800,
@@ -1718,7 +1807,7 @@ class _HomeState extends State<Home> {
                     ),
                   ),
                   if (role == 'staff')
-                    const Card(
+                    Card(
                       child: Padding(
                         padding: EdgeInsets.all(20),
                         child: Text(
@@ -1738,7 +1827,7 @@ class _HomeState extends State<Home> {
                           backgroundColor: mint,
                           child: Text(
                             u['name'].toString().substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: ink,
                               fontWeight: FontWeight.w800,
                             ),
@@ -1751,7 +1840,7 @@ class _HomeState extends State<Home> {
                           tooltip: 'Quản lý tài khoản',
                           onPressed: () =>
                               manageUser(Map<String, dynamic>.from(u)),
-                          icon: const Icon(Icons.manage_accounts_outlined),
+                          icon: Icon(Icons.manage_accounts_outlined),
                         ),
                       ),
                     ),
@@ -1771,7 +1860,7 @@ class _HomeState extends State<Home> {
                         padding: const EdgeInsets.all(22),
                         child: Column(
                           children: [
-                            const CircleAvatar(
+                            CircleAvatar(
                               radius: 28,
                               backgroundColor: mint,
                               child: Icon(
@@ -1785,7 +1874,7 @@ class _HomeState extends State<Home> {
                               isParent
                                   ? 'Chưa có hồ sơ trẻ'
                                   : 'Chưa có hồ sơ được liên kết',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,
                               ),
@@ -1796,7 +1885,7 @@ class _HomeState extends State<Home> {
                                   ? 'Thêm hồ sơ đầu tiên để bắt đầu đồng hành cùng con.'
                                   : 'Nhờ phụ huynh liên kết email tài khoản con trong hồ sơ trẻ.',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: muted, height: 1.4),
+                              style: TextStyle(color: muted, height: 1.4),
                             ),
                           ],
                         ),
@@ -1815,7 +1904,7 @@ class _HomeState extends State<Home> {
                           backgroundColor: mint,
                           child: Text(
                             c['name'].toString().substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: ink,
                               fontWeight: FontWeight.w800,
                               fontSize: 18,
@@ -1824,13 +1913,13 @@ class _HomeState extends State<Home> {
                         ),
                         title: Text(
                           c['name'],
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          '${c['age']} tuổi • ${c['daily_limit']} phút/ngày',
-                          style: const TextStyle(color: muted),
+                          '${c['age']} tuổi • ${c['daily_limit'] + (int.tryParse('${c['bonus_minutes_today'] ?? 0}') ?? 0)} phút hôm nay${(int.tryParse('${c['bonus_minutes_today'] ?? 0}') ?? 0) > 0 ? ' (+30 NFC)' : ''}',
+                          style: TextStyle(color: muted),
                         ),
-                        trailing: const Icon(
+                        trailing: Icon(
                           Icons.arrow_forward_ios_rounded,
                           size: 16,
                         ),
@@ -1880,16 +1969,13 @@ Future<Map<String, String>?> editDialog(
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Hủy'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Hủy')),
         FilledButton(
           onPressed: () => Navigator.pop(
             ctx,
             controllers.map((k, v) => MapEntry(k, v.text.trim())),
           ),
-          child: const Text('Lưu'),
+          child: Text('Lưu'),
         ),
       ],
     ),
@@ -1922,7 +2008,7 @@ class _ProfileMetric extends StatelessWidget {
     children: [
       Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           color: muted,
           fontSize: 10,
           fontWeight: FontWeight.w700,
@@ -1939,7 +2025,7 @@ class _ProfileMetric extends StatelessWidget {
           height: 1.1,
         ),
       ),
-      Text(detail, style: const TextStyle(color: muted, fontSize: 12)),
+      Text(detail, style: TextStyle(color: muted, fontSize: 12)),
     ],
   );
 }
@@ -1956,6 +2042,8 @@ class _ChildPageState extends State<ChildPage> {
   List<dynamic> devices = [], agreements = [], checkins = [];
   bool busy = true;
   String? error;
+  int bonusMinutesToday = 0;
+  String nfcStartTime = '08:00', nfcEndTime = '20:00';
   String get id => widget.child['id'];
   @override
   void initState() {
@@ -1979,10 +2067,15 @@ class _ChildPageState extends State<ChildPage> {
         api.call('GET', '/children/$id/devices'),
         api.call('GET', '/children/$id/agreements'),
         api.call('GET', '/children/$id/checkins'),
+        api.call('GET', '/children/$id/time-budget'),
       ]);
       devices = r[0];
       agreements = r[1];
       checkins = r[2];
+      final budget = Map<String, dynamic>.from(r[3]);
+      bonusMinutesToday = int.tryParse('${budget['bonus_minutes_today']}') ?? 0;
+      nfcStartTime = budget['nfc_start_time'];
+      nfcEndTime = budget['nfc_end_time'];
     } catch (e) {
       error = e.toString();
     } finally {
@@ -2029,6 +2122,40 @@ class _ChildPageState extends State<ChildPage> {
     });
   }
 
+  TimeOfDay parseTime(String value) {
+    final parts = value.split(':');
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
+  Future<void> configureNfcSchedule() async {
+    final start = await showTimePicker(
+      context: context,
+      initialTime: parseTime(nfcStartTime),
+      helpText: 'Bắt đầu nhận thưởng NFC',
+    );
+    if (start == null || !mounted) return;
+    final end = await showTimePicker(
+      context: context,
+      initialTime: parseTime(nfcEndTime),
+      helpText: 'Kết thúc nhận thưởng NFC',
+    );
+    if (end == null || !mounted) return;
+    final startMinutes = start.hour * 60 + start.minute;
+    final endMinutes = end.hour * 60 + end.minute;
+    if (startMinutes >= endMinutes) {
+      notify(context, 'Giờ kết thúc phải sau giờ bắt đầu trong cùng ngày.');
+      return;
+    }
+    await act(() async {
+      await api.call('PUT', '/children/$id/nfc-schedule', {
+        'startTime':
+            '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
+        'endTime':
+            '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
+      });
+    });
+  }
+
   Future<void> nfc(bool enroll) async {
     try {
       if (!await NfcManager.instance.isAvailable()) {
@@ -2041,7 +2168,7 @@ class _ChildPageState extends State<ChildPage> {
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
           title: Text(enroll ? 'Gắn thẻ NFC' : 'Check-in NFC'),
-          content: const Column(
+          content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.nfc, size: 64, color: green),
@@ -2055,7 +2182,7 @@ class _ChildPageState extends State<ChildPage> {
                 await NfcManager.instance.stopSession();
                 if (ctx.mounted) Navigator.pop(ctx);
               },
-              child: const Text('Hủy'),
+              child: Text('Hủy'),
             ),
           ],
         ),
@@ -2085,15 +2212,24 @@ class _ChildPageState extends State<ChildPage> {
               throw Exception('Thẻ không có UID được hỗ trợ');
             }
             final tagHash = sha256.convert(uid).toString();
-            await api.call(
-              enroll ? 'PUT' : 'POST',
-              '/children/$id/${enroll ? 'nfc' : 'checkins'}',
-              {'tagHash': tagHash},
+            final result = Map<String, dynamic>.from(
+              await api.call(
+                enroll ? 'PUT' : 'POST',
+                '/children/$id/${enroll ? 'nfc' : 'checkins'}',
+                {'tagHash': tagHash},
+              ),
             );
             await NfcManager.instance.stopSession();
             if (mounted) {
               Navigator.pop(context);
-              notify(context, enroll ? 'Đã gắn thẻ' : 'Check-in thành công');
+              notify(
+                context,
+                enroll
+                    ? 'Đã gắn thẻ'
+                    : result['awarded_minutes'] == 30
+                    ? 'Check-in thành công! Đã cộng 30 phút hôm nay.'
+                    : 'Check-in thành công. Bạn đã nhận thưởng hôm nay rồi.',
+              );
               await load();
             }
           } catch (e) {
@@ -2116,16 +2252,16 @@ class _ChildPageState extends State<ChildPage> {
       await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Xác nhận xóa'),
+          title: Text('Xác nhận xóa'),
           content: Text(message),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Hủy'),
+              child: Text('Hủy'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Xóa'),
+              child: Text('Xóa'),
             ),
           ],
         ),
@@ -2143,13 +2279,13 @@ class _ChildPageState extends State<ChildPage> {
           IconButton(
             tooltip: 'Làm mới hồ sơ',
             onPressed: load,
-            icon: const Icon(Icons.refresh_rounded),
+            icon: Icon(Icons.refresh_rounded),
           ),
           const SizedBox(width: 6),
         ],
       ),
       body: busy
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(child: CircularProgressIndicator())
           : error != null
           ? Center(
               child: TextButton(
@@ -2180,7 +2316,7 @@ class _ChildPageState extends State<ChildPage> {
                                 color: mint,
                                 borderRadius: BorderRadius.circular(13),
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.person_outline_rounded,
                                 color: green,
                               ),
@@ -2192,7 +2328,7 @@ class _ChildPageState extends State<ChildPage> {
                                 children: [
                                   Text(
                                     widget.child['name'].toString(),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: ink,
                                       fontSize: 18,
                                       fontWeight: FontWeight.w800,
@@ -2201,7 +2337,7 @@ class _ChildPageState extends State<ChildPage> {
                                   const SizedBox(height: 3),
                                   Text(
                                     '${widget.child['age']} tuổi • Hồ sơ trẻ',
-                                    style: const TextStyle(color: muted),
+                                    style: TextStyle(color: muted),
                                   ),
                                 ],
                               ),
@@ -2216,8 +2352,11 @@ class _ChildPageState extends State<ChildPage> {
                             Expanded(
                               child: _ProfileMetric(
                                 label: 'GIỚI HẠN MỖI NGÀY',
-                                value: '${widget.child['daily_limit']}',
-                                detail: 'phút',
+                                value:
+                                    '${widget.child['daily_limit'] + bonusMinutesToday}',
+                                detail: bonusMinutesToday > 0
+                                    ? 'phút (gồm +30 NFC hôm nay)'
+                                    : 'phút',
                                 accent: true,
                               ),
                             ),
@@ -2233,7 +2372,7 @@ class _ChildPageState extends State<ChildPage> {
                           ],
                         ),
                         const SizedBox(height: 14),
-                        const Text(
+                        Text(
                           'Đây là kế hoạch đã lưu; ứng dụng chưa theo dõi thời gian sử dụng hoặc chặn ứng dụng trên thiết bị.',
                           style: TextStyle(
                             color: muted,
@@ -2271,8 +2410,8 @@ class _ChildPageState extends State<ChildPage> {
                             widget.child.addAll(Map<String, dynamic>.from(r));
                           });
                         },
-                        icon: const Icon(Icons.edit_outlined),
-                        label: const Text('Sửa hồ sơ'),
+                        icon: Icon(Icons.edit_outlined),
+                        label: Text('Sửa hồ sơ'),
                       ),
                       OutlinedButton(
                         onPressed: () async {
@@ -2295,7 +2434,7 @@ class _ChildPageState extends State<ChildPage> {
                             });
                           }
                         },
-                        child: const Text('Liên kết trẻ'),
+                        child: Text('Liên kết trẻ'),
                       ),
                     ],
                   ),
@@ -2308,12 +2447,12 @@ class _ChildPageState extends State<ChildPage> {
                       ? IconButton.filledTonal(
                           tooltip: 'Thêm thiết bị',
                           onPressed: () => device(),
-                          icon: const Icon(Icons.add_rounded),
+                          icon: Icon(Icons.add_rounded),
                         )
                       : null,
                 ),
                 if (devices.isEmpty)
-                  const Card(
+                  Card(
                     child: Padding(
                       padding: EdgeInsets.all(16),
                       child: Text(
@@ -2325,15 +2464,15 @@ class _ChildPageState extends State<ChildPage> {
                 ...devices.map(
                   (d) => Card(
                     child: ListTile(
-                      leading: const Icon(Icons.phone_android, color: green),
+                      leading: Icon(Icons.phone_android, color: green),
                       title: Text(d['name']),
-                      subtitle: const Text('Android • hồ sơ thiết bị'),
+                      subtitle: Text('Android • hồ sơ thiết bị'),
                       onTap: widget.isParent
                           ? () => device(Map<String, dynamic>.from(d))
                           : null,
                       trailing: widget.isParent
                           ? IconButton(
-                              icon: const Icon(Icons.delete_outline),
+                              icon: Icon(Icons.delete_outline),
                               onPressed: () async {
                                 if (await confirm('Xóa thiết bị này?')) {
                                   await act(() async {
@@ -2356,7 +2495,7 @@ class _ChildPageState extends State<ChildPage> {
                   action: IconButton.filledTonal(
                     tooltip: 'Tạo thỏa thuận',
                     onPressed: agreement,
-                    icon: const Icon(Icons.add_rounded),
+                    icon: Icon(Icons.add_rounded),
                   ),
                 ),
                 ...agreements.map(
@@ -2369,7 +2508,7 @@ class _ChildPageState extends State<ChildPage> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const CircleAvatar(
+                              CircleAvatar(
                                 radius: 19,
                                 backgroundColor: mint,
                                 child: Icon(
@@ -2385,7 +2524,7 @@ class _ChildPageState extends State<ChildPage> {
                                   children: [
                                     Text(
                                       a['title'],
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w800,
                                         fontSize: 16,
                                       ),
@@ -2393,7 +2532,7 @@ class _ChildPageState extends State<ChildPage> {
                                     const SizedBox(height: 4),
                                     Text(
                                       '+${a['reward']} phút • ${{'pending': 'Chờ duyệt', 'approved': 'Đã duyệt', 'rejected': 'Từ chối'}[a['status']]}',
-                                      style: const TextStyle(color: muted),
+                                      style: TextStyle(color: muted),
                                     ),
                                   ],
                                 ),
@@ -2431,7 +2570,7 @@ class _ChildPageState extends State<ChildPage> {
                                       });
                                     }
                                   },
-                                  child: const Text('Xóa'),
+                                  child: Text('Xóa'),
                                 ),
                               ],
                             ),
@@ -2447,40 +2586,59 @@ class _ChildPageState extends State<ChildPage> {
                   'Điểm chạm an tâm',
                   subtitle: 'Check-in nhanh chóng bằng thẻ NFC.',
                 ),
-                const Card(
+                Card(
                   child: Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      'Chạm thẻ NFC để ghi nhận check-in. UID thẻ không phải bằng chứng danh tính hay vị trí.',
+                      'Quét đúng thẻ trong khung giờ nhận thưởng để cộng 30 phút vào hạn mức hôm nay. Mỗi ngày chỉ nhận một lần. UID thẻ không phải bằng chứng danh tính hay vị trí.',
                       style: TextStyle(color: muted, height: 1.4),
                     ),
                   ),
                 ),
+                if (widget.isParent)
+                  Card(
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: mint,
+                        child: Icon(Icons.schedule_rounded),
+                      ),
+                      title: Text('Khung giờ nhận thưởng'),
+                      subtitle: Text(
+                        '$nfcStartTime–$nfcEndTime (giờ Việt Nam)',
+                      ),
+                      trailing: Icon(Icons.edit_outlined, color: green),
+                      onTap: configureNfcSchedule,
+                    ),
+                  ),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
                     FilledButton.icon(
                       onPressed: () => nfc(false),
-                      icon: const Icon(Icons.nfc),
-                      label: const Text('Check-in NFC'),
+                      icon: Icon(Icons.nfc),
+                      label: Text('Check-in NFC'),
                     ),
                     if (widget.isParent)
                       OutlinedButton.icon(
                         onPressed: () => nfc(true),
-                        icon: const Icon(Icons.add_link_rounded),
-                        label: const Text('Gắn thẻ'),
+                        icon: Icon(Icons.add_link_rounded),
+                        label: Text('Gắn thẻ'),
                       ),
                   ],
                 ),
                 ...checkins.map(
                   (c) => Card(
                     child: ListTile(
-                      leading: const CircleAvatar(
+                      leading: CircleAvatar(
                         backgroundColor: mint,
                         child: Icon(Icons.check_rounded),
                       ),
-                      title: const Text('Check-in thành công'),
+                      title: Text(
+                        (int.tryParse('${c['reward_minutes']}') ?? 0) > 0
+                            ? 'Check-in • +30 phút'
+                            : 'Check-in NFC',
+                      ),
                       subtitle: Text(
                         DateTime.parse(
                           c['created_at'],
@@ -2505,8 +2663,8 @@ class _ChildPageState extends State<ChildPage> {
                         if (context.mounted) notify(context, e);
                       }
                     },
-                    icon: const Icon(Icons.delete_forever, color: Colors.red),
-                    label: const Text(
+                    icon: Icon(Icons.delete_forever, color: Colors.red),
+                    label: Text(
                       'Xóa hồ sơ trẻ',
                       style: TextStyle(color: Colors.red),
                     ),

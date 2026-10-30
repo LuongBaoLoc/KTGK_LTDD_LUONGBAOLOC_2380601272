@@ -58,11 +58,43 @@ test('CRUD is isolated between families and validates limits',async()=>{
 test('NFC binds a tag; agreements require parent approval',async()=>{
  const a=await register();const c=(await request(app).post('/children').set(agent(a.token)).send({name:'An',age:9,daily_limit:90})).body;
  const path='/children/'+c.id;await request(app).put(path+'/nfc').set(agent(a.token)).send({tagHash:hash('tag')}).expect(200);
+ await request(app).put(path+'/nfc-schedule').set(agent(a.token)).send({startTime:'00:00',endTime:'23:59'}).expect(200);
  await request(app).post(path+'/checkins').set(agent(a.token)).send({tagHash:hash('wrong')}).expect(403);
  await request(app).post(path+'/checkins').set(agent(a.token)).send({tagHash:hash('tag')}).expect(201);
  const checks=await request(app).get(path+'/checkins').set(agent(a.token)).expect(200);assert.equal(checks.body.length,1);
  const r=await request(app).post(path+'/agreements').set(agent(a.token)).send({title:'Read books',reward:15}).expect(201);
  await request(app).patch('/agreements/'+r.body.id).set(agent(a.token)).send({status:'approved'}).expect(200);
+});
+test('NFC grants 30 daily minutes only for a valid tag in the configured time window',async()=>{
+ const a=await register(),other=await register('nfcother');
+ const c=(await request(app).post('/children').set(agent(a.token)).send({name:'An',age:9,daily_limit:90})).body;
+ const path='/children/'+c.id;
+ await request(app).put(path+'/nfc').set(agent(a.token)).send({tagHash:hash('tag')}).expect(200);
+ await request(app).put(path+'/nfc-schedule').set(agent(other.token)).send({startTime:'00:00',endTime:'23:59'}).expect(404);
+ await request(app).put(path+'/nfc-schedule').set(agent(a.token)).send({startTime:'20:00',endTime:'08:00'}).expect(400);
+
+ const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Ho_Chi_Minh',hour:'2-digit',hourCycle:'h23'}).formatToParts(new Date());
+ const hour=Number(parts.find(part=>part.type==='hour').value);
+ const closedWindow=hour<12?{startTime:'12:00',endTime:'12:01'}:{startTime:'00:00',endTime:'00:01'};
+ await request(app).put(path+'/nfc-schedule').set(agent(a.token)).send(closedWindow).expect(200);
+ await request(app).post(path+'/checkins').set(agent(a.token)).send({tagHash:hash('tag')}).expect(403);
+
+ await request(app).put(path+'/nfc-schedule').set(agent(a.token)).send({startTime:'00:00',endTime:'23:59'}).expect(200);
+ const first=await request(app).post(path+'/checkins').set(agent(a.token)).send({tagHash:hash('wrong')}).expect(403);
+ assert.equal(first.body.message,'Thẻ NFC không khớp');
+ const awarded=await request(app).post(path+'/checkins').set(agent(a.token)).send({tagHash:hash('tag')}).expect(201);
+ assert.equal(awarded.body.awarded_minutes,30);
+ assert.equal(awarded.body.effective_daily_limit,120);
+ const repeated=await request(app).post(path+'/checkins').set(agent(a.token)).send({tagHash:hash('tag')}).expect(201);
+ assert.equal(repeated.body.awarded_minutes,0);
+ assert.equal(repeated.body.bonus_minutes_today,30);
+ const budget=await request(app).get(path+'/time-budget').set(agent(a.token)).expect(200);
+ assert.equal(budget.body.daily_limit,90);
+ assert.equal(budget.body.bonus_minutes_today,30);
+ assert.equal(budget.body.effective_daily_limit,120);
+ const checks=await request(app).get(path+'/checkins').set(agent(a.token)).expect(200);
+ assert.equal(checks.body.length,2);
+ assert.deepEqual(checks.body.map(checkin=>checkin.reward_minutes).sort(),[0,30]);
 });
 test('registration cannot grant admin; staff cannot access family data',async()=>{
  const a=await register();await request(app).get('/admin/users').set(agent(a.token)).expect(403);

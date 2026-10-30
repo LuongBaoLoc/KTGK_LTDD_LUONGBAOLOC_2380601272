@@ -22,7 +22,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: PUBLIC_URL
-        sync: false
+        value: https://luongbaoloc-2380601272-api-th10.onrender.com
       - key: MAIL_PROVIDER
         value: resend
       - key: RESEND_API_KEY

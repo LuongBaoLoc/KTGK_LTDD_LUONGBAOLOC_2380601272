@@ -15,7 +15,7 @@ class ApiException implements Exception {
 class Api {
   static const base = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://phamnguyentuandat-2380614580-api.onrender.com',
+    defaultValue: 'https://luongbaoloc-2380601272-api-th10.onrender.com',
   );
   static const storage = FlutterSecureStorage();
   String? token;

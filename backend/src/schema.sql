@@ -14,8 +14,12 @@ CREATE TABLE IF NOT EXISTS children (
  name text NOT NULL, age int NOT NULL CHECK(age BETWEEN 1 AND 17),
  daily_limit int NOT NULL DEFAULT 120 CHECK(daily_limit BETWEEN 15 AND 1440),
  nfc_hash text,
+ nfc_start_time text NOT NULL DEFAULT '08:00',
+ nfc_end_time text NOT NULL DEFAULT '20:00',
  created_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE children ADD COLUMN IF NOT EXISTS nfc_start_time text NOT NULL DEFAULT '08:00';
+ALTER TABLE children ADD COLUMN IF NOT EXISTS nfc_end_time text NOT NULL DEFAULT '20:00';
 CREATE UNIQUE INDEX IF NOT EXISTS child_nfc_unique ON children(nfc_hash) WHERE nfc_hash IS NOT NULL;
 CREATE TABLE IF NOT EXISTS devices (
  id uuid PRIMARY KEY, child_id uuid NOT NULL REFERENCES children(id) ON DELETE CASCADE,
@@ -31,6 +35,13 @@ CREATE TABLE IF NOT EXISTS agreements (
 CREATE TABLE IF NOT EXISTS checkins (
  id uuid PRIMARY KEY, child_id uuid NOT NULL REFERENCES children(id) ON DELETE CASCADE,
  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS nfc_rewards (
+ id uuid PRIMARY KEY, child_id uuid NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+ checkin_id uuid NOT NULL UNIQUE REFERENCES checkins(id) ON DELETE CASCADE,
+ reward_day date NOT NULL, minutes int NOT NULL DEFAULT 30 CHECK(minutes = 30),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(child_id,reward_day)
 );
 CREATE TABLE IF NOT EXISTS child_links (
  user_id uuid UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
